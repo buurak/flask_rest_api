@@ -1,15 +1,27 @@
 from flask import Flask, request, jsonify
-import json
-import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
+from rq import Queue
+from celeryconfig import *
+import json
+import os
+import time
+
 
 # Init app
 app = Flask(__name__)
-basedir = os.path.abspath(os.path.dirname(__file__))
+app.config.update(
+    CELERY_BROKER_URL='redis://localhost:6379',
+    CELERY_RESULT_BACKEND='redis://localhost:6379'
+)
+celery = make_celery(app)
+
+@celery.task()
+def add_together(a, b):
+    return a + b
 
 # Database
-app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://burak:12345@localhost:5432/api"
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://postgres:12345@localhost:5432/api"
 
 # Inıt db
 db = SQLAlchemy(app)
@@ -40,7 +52,8 @@ product_schemas = ProductSchema(many=True)
         
 
 @app.route('/product', methods=['POST'])
-def add_product():
+@celery.task()
+def add_product_api():
     name = request.json['name']
     description = request.json['description']
     price = request.json['price']
@@ -49,6 +62,7 @@ def add_product():
     db.session.add(new_product)
     db.session.commit()
     return product_schema.jsonify(new_product)
+
 
 @app.route('/product', methods=['GET'])
 def get_products():
